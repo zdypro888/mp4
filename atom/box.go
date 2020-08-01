@@ -3,6 +3,7 @@ package atom
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -13,26 +14,28 @@ const (
 
 // File defines a file structure.
 type File struct {
-	*os.File
-	Ftyp *FtypBox
-	Moov *MoovBox
-	Mdat *MdatBox
-	Size int64
+	Reader io.ReaderAt
+	Ftyp   *FtypBox
+	Moov   *MoovBox
+	Mdat   *MdatBox
+	Size   int64
 
 	IsFragmented bool
 }
 
 // Parse reads an MP4 file for atom boxes.
 func (f *File) Parse() error {
-	info, err := f.Stat()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return err
+	if f.Size == 0 {
+		if ofile, ok := f.Reader.(*os.File); ok {
+			info, err := ofile.Stat()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return err
+			}
+			// fmt.Printf("Filesize: %v \n", info.Size())
+			f.Size = info.Size()
+		}
 	}
-
-	// fmt.Printf("Filesize: %v \n", info.Size())
-	f.Size = info.Size()
-
 	boxes := readBoxes(f, int64(0), f.Size)
 	for _, box := range boxes {
 		switch box.Name {
@@ -65,7 +68,7 @@ func (f *File) ReadBoxAt(offset int64) (boxSize uint32, boxType string) {
 // ReadBytesAt reads a box at n and offset.
 func (f *File) ReadBytesAt(n int64, offset int64) (word []byte) {
 	buf := make([]byte, n)
-	if _, error := f.ReadAt(buf, offset); error != nil {
+	if _, error := f.Reader.ReadAt(buf, offset); error != nil {
 		fmt.Println(error)
 		return
 	}
